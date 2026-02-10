@@ -132,6 +132,18 @@ header {
   margin-bottom: 1.5rem;
 }
 
+.table-wrap {
+  overflow-x: auto;
+  background:
+    linear-gradient(90deg, var(--card-bg) 33%, transparent) left center,
+    linear-gradient(90deg, transparent, var(--card-bg) 66%) right center,
+    radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.12), transparent) left center,
+    radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.12), transparent) right center;
+  background-repeat: no-repeat;
+  background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+
 .server-section.entering {
   animation: card-in 0.35s cubic-bezier(0.25, 1, 0.5, 1) both;
 }
@@ -268,6 +280,8 @@ td.changed {
 .badge-completing { background: #dbeafe; color: #1e40af; }
 .badge-failed     { background: #fee2e2; color: #991b1b; }
 .badge-cancelled  { background: #fee2e2; color: #991b1b; }
+.badge-completed  { background: #dbeafe; color: #1e40af; }
+.badge-timeout    { background: #ffedd5; color: #9a3412; }
 .badge-other      { background: #f3f4f6; color: #374151; }
 
 /* ── Clickable rows ──────────────────────────────────── */
@@ -378,6 +392,60 @@ tr.clickable:active td { background: #e0e7ff; }
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+/* ── Recently finished disclosure ────────────────────── */
+
+.recent-section {
+  border-top: 1px solid var(--border);
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+}
+
+.recent-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--muted);
+  padding: 0.35rem 0.25rem;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.recent-toggle:hover {
+  color: var(--text);
+  background: #f3f4f6;
+}
+
+.recent-chevron {
+  display: inline-block;
+  font-size: 0.65rem;
+  transition: transform 0.2s ease;
+}
+
+.recent-chevron.open {
+  transform: rotate(90deg);
+}
+
+.recent-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.recent-body.open {
+  max-height: 500px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.recent-table {
+  font-size: 0.82rem;
+  margin-top: 0.5rem;
 }
 
 /* ── Reduced motion ──────────────────────────────────── */

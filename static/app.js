@@ -35,7 +35,22 @@ const STATE_CLASSES = {
   COMPLETING: "badge-completing",
   FAILED:     "badge-failed",
   CANCELLED:  "badge-cancelled",
+  COMPLETED:  "badge-completed",
+  TIMEOUT:    "badge-timeout",
 };
+
+const RECENT_COLUMNS = [
+  { key: "JobID",    label: "Job ID" },
+  { key: "JobName",  label: "Name" },
+  { key: "State",    label: "State" },
+  { key: "Elapsed",  label: "Elapsed" },
+  { key: "Start",    label: "Start" },
+  { key: "End",      label: "End" },
+  { key: "ExitCode", label: "Exit Code" },
+];
+
+// Per-server open/closed state for the recent-jobs disclosure (survives DOM diffing)
+const recentOpen = {};
 
 const CLICKABLE_STATES = new Set(["RUNNING", "COMPLETING"]);
 
@@ -55,7 +70,12 @@ const COLUMNS = [
 /* ── Helpers ─────────────────────────────────────────── */
 
 function badgeClass(state) {
-  return STATE_CLASSES[state] || "badge-other";
+  if (STATE_CLASSES[state]) return STATE_CLASSES[state];
+  // sacct may return e.g. "CANCELLED by 12345" or "CANCELLED+"
+  for (const key of Object.keys(STATE_CLASSES)) {
+    if (state.startsWith(key)) return STATE_CLASSES[key];
+  }
+  return "badge-other";
 }
 
 function escapeHtml(s) {
@@ -77,6 +97,85 @@ function cellHtml(col, job) {
     return formatGres(val);
   }
   return escapeHtml(val);
+}
+
+/* ── Recently finished disclosure ────────────────────── */
+
+function buildRecentSection(serverName, recentJobs, isOpen) {
+  const count = recentJobs.length;
+  const openCls = isOpen ? " open" : "";
+
+  let html = `<div class="recent-section">`;
+  html += `<button class="recent-toggle" onclick="toggleRecent('${serverName}')">`;
+  html += `<span class="recent-chevron${openCls}">&#9654;</span> `;
+  html += `Recently finished (${count})`;
+  html += `</button>`;
+  html += `<div class="recent-body${openCls}">`;
+  html += buildRecentTableHtml(recentJobs);
+  html += `</div></div>`;
+  return html;
+}
+
+function buildRecentTableHtml(recentJobs) {
+  let html = `<div class="table-wrap"><table class="recent-table"><thead><tr>`;
+  RECENT_COLUMNS.forEach((c) => { html += `<th>${c.label}</th>`; });
+  html += `</tr></thead><tbody>`;
+  recentJobs.forEach((job) => {
+    html += `<tr>`;
+    RECENT_COLUMNS.forEach((c) => {
+      const val = job[c.key] || "";
+      if (c.key === "State") {
+        html += `<td><span class="badge ${badgeClass(val)}">${escapeHtml(val)}</span></td>`;
+      } else {
+        html += `<td>${escapeHtml(val)}</td>`;
+      }
+    });
+    html += `</tr>`;
+  });
+  html += `</tbody></table></div>`;
+  return html;
+}
+
+function toggleRecent(serverName) {
+  recentOpen[serverName] = !recentOpen[serverName];
+  const section = document.getElementById(`server-${serverName}`);
+  if (!section) return;
+  const chevron = section.querySelector(".recent-chevron");
+  const body = section.querySelector(".recent-body");
+  if (chevron) chevron.classList.toggle("open");
+  if (body) body.classList.toggle("open");
+}
+
+function patchRecentSection(section, serverData) {
+  const name = serverData.server;
+  const recentJobs = serverData.recent_jobs || [];
+  const existing = section.querySelector(".recent-section");
+
+  if (recentJobs.length === 0) {
+    if (existing) existing.remove();
+    return;
+  }
+
+  if (!existing) {
+    section.insertAdjacentHTML("beforeend",
+      buildRecentSection(name, recentJobs, !!recentOpen[name]));
+    return;
+  }
+
+  // Update toggle label count
+  const toggle = existing.querySelector(".recent-toggle");
+  if (toggle) {
+    const isOpen = !!recentOpen[name];
+    const openCls = isOpen ? " open" : "";
+    toggle.innerHTML =
+      `<span class="recent-chevron${openCls}">&#9654;</span> Recently finished (${recentJobs.length})`;
+  }
+
+  // Update table contents
+  const body = existing.querySelector(".recent-body");
+  if (body) {
+    body.innerHTML = buildRecentTableHtml(recentJobs);
+  }
 }
 
 /* ── Modal ───────────────────────────────────────────── */
@@ -189,11 +288,17 @@ function patchServer(container, serverData, isFirstRender) {
     return;
   }
 
-  // If no jobs, nothing to patch
-  if (!nowHasJobs) return;
+  // If no active jobs, still patch the recent section
+  if (!nowHasJobs) {
+    patchRecentSection(section, serverData);
+    return;
+  }
 
   // ── Patch table rows ──
   patchTable(section, serverData);
+
+  // ── Patch recent-jobs disclosure ──
+  patchRecentSection(section, serverData);
 }
 
 /** Full render of a server card's inner content. */
@@ -212,13 +317,19 @@ function renderServerFull(section, serverData, animate) {
   } else if (serverData.jobs.length === 0) {
     html += `<div class="no-jobs">All quiet on ${escapeHtml(name)}. No jobs in queue.</div>`;
   } else {
-    html += `<table><thead><tr>`;
+    html += `<div class="table-wrap"><table><thead><tr>`;
     COLUMNS.forEach((c) => { html += `<th>${c.label}</th>`; });
     html += `</tr></thead><tbody>`;
     serverData.jobs.forEach((job, idx) => {
       html += buildRowHtml(name, job, animate ? idx * 0.03 : -1);
     });
-    html += `</tbody></table>`;
+    html += `</tbody></table></div>`;
+  }
+
+  // Append recent-jobs disclosure if data is available
+  const recentJobs = serverData.recent_jobs || [];
+  if (recentJobs.length > 0) {
+    html += buildRecentSection(name, recentJobs, !!recentOpen[name]);
   }
 
   section.innerHTML = html;

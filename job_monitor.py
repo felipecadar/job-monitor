@@ -46,6 +46,54 @@ def fetch_jobs(server):
         return {"server": server, "error": str(exc), "jobs": []}
 
 
+def fetch_recent_jobs(server):
+    """SSH into *server* and return recently finished jobs via sacct."""
+    finished_prefixes = ("COMPLETED", "FAILED", "CANCELLED", "TIMEOUT")
+    try:
+        result = subprocess.run(
+            [
+                "ssh", server,
+                "sacct --parsable2 --noheader --allocations"
+                " --starttime=now-7days"
+                " --format=JobID,JobName,State,Elapsed,Start,End,ExitCode",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            return []
+
+        jobs = []
+        for line in result.stdout.strip().splitlines():
+            parts = line.split("|")
+            if len(parts) < 7:
+                continue
+            state = parts[2]
+            if not state.startswith(finished_prefixes):
+                continue
+            jobs.append({
+                "JobID": parts[0],
+                "JobName": parts[1],
+                "State": state,
+                "Elapsed": parts[3],
+                "Start": parts[4],
+                "End": parts[5],
+                "ExitCode": parts[6],
+            })
+        return jobs[-5:][::-1]
+    except Exception:
+        return []
+
+
+def fetch_all_for_server(server):
+    """Fetch both active and recent jobs for *server*."""
+    active = fetch_jobs(server)
+    recent = fetch_recent_jobs(server)
+    active["recent_jobs"] = recent
+    return active
+
+
 def fetch_job_output(server, jobid):
     """SSH into *server*, find the SLURM stdout file for *jobid*, and tail it."""
     try:
@@ -92,7 +140,7 @@ def index():
 @app.route("/api/jobs")
 def api_jobs():
     with ThreadPoolExecutor(max_workers=len(SERVERS)) as pool:
-        results = list(pool.map(fetch_jobs, SERVERS))
+        results = list(pool.map(fetch_all_for_server, SERVERS))
     return jsonify(results)
 
 
