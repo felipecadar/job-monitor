@@ -94,24 +94,50 @@ def fetch_all_for_server(server):
     return active
 
 
+def _find_stdout_scontrol(server, jobid):
+    """Try scontrol to get the StdOut path (works for active jobs)."""
+    result = subprocess.run(
+        ["ssh", server, "scontrol", "show", "job", jobid],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode != 0:
+        return None
+    for part in result.stdout.split():
+        if part.startswith("StdOut="):
+            return part.split("=", 1)[1]
+    return None
+
+
+def _find_stdout_sacct(server, jobid):
+    """Fallback: use sacct WorkDir + glob to find the output file."""
+    result = subprocess.run(
+        ["ssh", server,
+         f"sacct --parsable2 --noheader --allocations"
+         f" --format=WorkDir --jobs={jobid}"],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode != 0:
+        return None
+    workdir = result.stdout.strip().splitlines()[0].strip() if result.stdout.strip() else None
+    if not workdir:
+        return None
+    # Search for slurm-<jobid>*.out in the working directory
+    find_result = subprocess.run(
+        ["ssh", server,
+         f"find {workdir} -maxdepth 1 -name 'slurm-{jobid}*' -type f"
+         f" 2>/dev/null | head -1"],
+        capture_output=True, text=True, timeout=15,
+    )
+    path = find_result.stdout.strip()
+    return path or None
+
+
 def fetch_job_output(server, jobid):
     """SSH into *server*, find the SLURM stdout file for *jobid*, and tail it."""
     try:
-        result = subprocess.run(
-            ["ssh", server, "scontrol", "show", "job", jobid],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode != 0:
-            return {"error": result.stderr.strip() or "Failed to query job info"}
-
-        stdout_path = None
-        for part in result.stdout.split():
-            if part.startswith("StdOut="):
-                stdout_path = part.split("=", 1)[1]
-                break
-
+        stdout_path = _find_stdout_scontrol(server, jobid)
+        if not stdout_path:
+            stdout_path = _find_stdout_sacct(server, jobid)
         if not stdout_path:
             return {"error": "Could not find output file path for this job"}
 

@@ -111,17 +111,19 @@ function buildRecentSection(serverName, recentJobs, isOpen) {
   html += `Recently finished (${count})`;
   html += `</button>`;
   html += `<div class="recent-body${openCls}">`;
-  html += buildRecentTableHtml(recentJobs);
+  html += buildRecentTableHtml(serverName, recentJobs);
   html += `</div></div>`;
   return html;
 }
 
-function buildRecentTableHtml(recentJobs) {
+function buildRecentTableHtml(serverName, recentJobs) {
   let html = `<div class="table-wrap"><table class="recent-table"><thead><tr>`;
   RECENT_COLUMNS.forEach((c) => { html += `<th>${c.label}</th>`; });
   html += `</tr></thead><tbody>`;
   recentJobs.forEach((job) => {
-    html += `<tr>`;
+    const jobName = (job.JobName || "").replace(/'/g, "\\'");
+    const onclick = `onclick="showJobOutput('${serverName}','${job.JobID}','${jobName}')"`;
+    html += `<tr class="clickable" ${onclick} title="Click to view output">`;
     RECENT_COLUMNS.forEach((c) => {
       const val = job[c.key] || "";
       if (c.key === "State") {
@@ -174,7 +176,7 @@ function patchRecentSection(section, serverData) {
   // Update table contents
   const body = existing.querySelector(".recent-body");
   if (body) {
-    body.innerHTML = buildRecentTableHtml(recentJobs);
+    body.innerHTML = buildRecentTableHtml(name, recentJobs);
   }
 }
 
